@@ -1,0 +1,115 @@
+{% extends "ngabo/base.html" %}
+
+{% block title %}Account Settings - User Authentication Service{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Account Settings</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <h6 class="mb-2">Account Information</h6>
+                        <p>
+                            <strong>Username:</strong> {{ user.username }}<br>
+                            <strong>Email:</strong> {{ user.email }}<br>
+                            <strong>Account Created:</strong> {{ user.date_joined|date:"Y-m-d H:i" }}<br>
+                            <strong>Last Login:</strong> {{ user.last_login|date:"Y-m-d H:i"|default:"Never" }}
+                        </p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <h6 class="mb-2">Full Name</h6>
+                        <p>
+                            <strong>First Name:</strong> {{ user.first_name|default:"Not set" }}<br>
+                            <strong>Last Name:</strong> {{ user.last_name|default:"Not set" }}<br>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Security Options</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">Password</h6>
+                            <small class="text-muted">Last changed: {{ user.date_joined|date:"Y-m-d" }}</small>
+                        </div>
+                        <a href="{% url 'ngabo:change_password' %}" class="btn btn-sm btn-outline-primary">Change</a>
+                    </div>
+                </div>
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">Email Address</h6>
+                            <small class="text-muted">{{ user.email }}</small>
+                        </div>
+                        <a href="{% url 'ngabo:profile' %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Profile Information</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">Personal Details</h6>
+                            <small class="text-muted">Bio, phone, date of birth, and profile picture</small>
+                        </div>
+                        <a href="{% url 'ngabo:profile' %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4 border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Danger Zone</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">These actions cannot be undone. Please proceed with caution.</p>
+                <button type="button" class="btn btn-outline-danger" disabled title="Implement in Phase 2">
+                    Delete Account
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Quick Settings</h5>
+            </div>
+            <div class="card-body d-grid gap-2">
+                <a href="{% url 'ngabo:profile' %}" class="btn btn-outline-primary">Edit Profile</a>
+                <a href="{% url 'ngabo:change_password' %}" class="btn btn-outline-primary">Change Password</a>
+                <a href="{% url 'ngabo:dashboard' %}" class="btn btn-outline-secondary">Dashboard</a>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Help & Support</h5>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    Having trouble with your account? 
+                    <a href="#" class="text-primary">Contact support</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

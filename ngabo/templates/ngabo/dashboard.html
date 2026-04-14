@@ -1,0 +1,100 @@
+{% extends "ngabo/base.html" %}
+
+{% block title %}Dashboard - User Authentication Service{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Dashboard</h5>
+            </div>
+            <div class="card-body">
+                <h6>Welcome, {{ user.get_full_name|default:user.username }}!</h6>
+                <p class="text-muted">You have successfully logged into the User Authentication Service.</p>
+                
+                <div class="alert alert-info" role="alert">
+                    <strong>Protected Area:</strong> This dashboard is only accessible to authenticated users.
+                </div>
+
+                <p class="card-text">
+                    You can access the following features:
+                </p>
+                <ul>
+                    <li><a href="{% url 'ngabo:profile' %}">View and Edit Your Profile</a></li>
+                    <li><a href="{% url 'ngabo:change_password' %}">Change Your Password</a></li>
+                    <li><a href="{% url 'ngabo:account_settings' %}">Account Settings</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Account Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <th>Username:</th>
+                            <td>{{ user.username }}</td>
+                        </tr>
+                        <tr>
+                            <th>Email:</th>
+                            <td>{{ user.email }}</td>
+                        </tr>
+                        <tr>
+                            <th>Full Name:</th>
+                            <td>{{ user.get_full_name|default:"Not set" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Account Created:</th>
+                            <td>{{ user.date_joined|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Last Login:</th>
+                            <td>{{ user.last_login|date:"Y-m-d H:i"|default:"Never" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body d-grid gap-2">
+                <a href="{% url 'ngabo:profile' %}" class="btn btn-outline-primary">Edit Profile</a>
+                <a href="{% url 'ngabo:change_password' %}" class="btn btn-outline-primary">Change Password</a>
+                <a href="{% url 'ngabo:account_settings' %}" class="btn btn-outline-primary">Settings</a>
+            </div>
+        </div>
+
+        {% if profile %}
+        <div class="card mt-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Profile Summary</h5>
+            </div>
+            <div class="card-body">
+                {% if profile.bio %}
+                    <p><strong>Bio:</strong></p>
+                    <p class="text-muted">{{ profile.bio|truncatewords:20 }}</p>
+                {% endif %}
+                {% if profile.phone_number %}
+                    <p><strong>Phone:</strong> {{ profile.phone_number }}</p>
+                {% endif %}
+                {% if profile.date_of_birth %}
+                    <p><strong>Date of Birth:</strong> {{ profile.date_of_birth|date:"Y-m-d" }}</p>
+                {% endif %}
+                {% if not profile.bio and not profile.phone_number and not profile.date_of_birth %}
+                    <p class="text-muted">Your profile is incomplete. <a href="{% url 'ngabo:profile' %}">Complete it now</a>.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
