@@ -292,6 +292,43 @@ class ProtectedViewsTestCase(BaseAuthTestCase):
         response = self.client.get(self.profile_url)
         self.assertEqual(response.status_code, 200)
 
+    def test_profile_rejects_external_user_identifiers(self):
+        """Test that profile access ignores or rejects external user/profile identifiers."""
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='otheruser@example.com',
+            password='TestPassword123'
+        )
+        UserProfile.objects.create(user=other_user)
+
+        self.client.login(username='testuser', password='TestPassword123')
+
+        response = self.client.get(self.profile_url, {'user_id': other_user.id})
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.get(self.profile_url, {'profile_id': other_user.profile.id})
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.post(self.profile_url, {
+            'bio': 'Attempted override',
+            'user_id': other_user.id
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_account_settings_rejects_external_user_identifiers(self):
+        """Test that account settings cannot be accessed with other user identifiers."""
+        other_user = User.objects.create_user(
+            username='otheruser2',
+            email='otheruser2@example.com',
+            password='TestPassword123'
+        )
+        UserProfile.objects.create(user=other_user)
+
+        self.client.login(username='testuser', password='TestPassword123')
+
+        response = self.client.get(self.account_settings_url, {'user_id': other_user.id})
+        self.assertEqual(response.status_code, 403)
+
 
 class PasswordChangeTestCase(BaseAuthTestCase):
     """Test cases for password change functionality."""

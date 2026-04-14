@@ -56,3 +56,4 @@ python manage.py test ngabo
 - The app reuses Django's built-in authentication system and secure password validators.
 - `ngabo` is registered in `devsec_demo/settings.py` and included under `devsec_demo/urls.py`.
 - `MEDIA_URL` and `MEDIA_ROOT` are configured for image uploads.
+- Profile and settings routes now resolve resources using `request.user` only and explicitly reject external `user_id`, `profile_id`, or `username` parameters to prevent IDOR risks.

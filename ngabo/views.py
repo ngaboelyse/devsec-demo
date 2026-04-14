@@ -36,6 +36,25 @@ def is_privileged_user(user):
     return user.is_authenticated and (user.is_superuser or user.groups.filter(name=PRIVILEGED_GROUP_NAME).exists())
 
 
+def reject_external_user_reference(request):
+    """Reject requests that attempt to override current user object ownership.
+
+    This prevents future IDOR risks when external identifiers are supplied.
+    """
+    candidate_fields = ('user_id', 'profile_id', 'username')
+    if any(field in request.GET or field in request.POST for field in candidate_fields):
+        return HttpResponseForbidden("Invalid direct object reference.")
+    return None
+
+
+def get_owned_user_profile(user):
+    """Resolve the authenticated user's profile without using external identifiers."""
+    profile = UserProfile.objects.filter(user=user).first()
+    if profile is None:
+        profile = UserProfile.objects.create(user=user)
+    return profile
+
+
 @require_http_methods(["GET", "POST"])
 @csrf_protect
 def register(request):
@@ -120,10 +139,11 @@ def logout_view(request):
 @login_required(login_url='ngabo:login')
 def dashboard(request):
     """Protected dashboard view for authenticated users."""
-    try:
-        profile = request.user.profile
-    except UserProfile.DoesNotExist:
-        profile = UserProfile.objects.create(user=request.user)
+    access_denied = reject_external_user_reference(request)
+    if access_denied:
+        return access_denied
+
+    profile = get_owned_user_profile(request.user)
     
     context = {
         'profile': profile,
@@ -158,10 +178,11 @@ def change_password(request):
 @csrf_protect
 def profile(request):
     """Allow users to view and edit their profile."""
-    try:
-        user_profile = request.user.profile
-    except UserProfile.DoesNotExist:
-        user_profile = UserProfile.objects.create(user=request.user)
+    access_denied = reject_external_user_reference(request)
+    if access_denied:
+        return access_denied
+
+    user_profile = get_owned_user_profile(request.user)
     
     if request.method == 'POST':
         form = UserProfileForm(request.POST, request.FILES, instance=user_profile)
@@ -186,10 +207,11 @@ def profile(request):
 @login_required(login_url='ngabo:login')
 def account_settings(request):
     """View for account settings and security options."""
-    try:
-        profile = request.user.profile
-    except UserProfile.DoesNotExist:
-        profile = UserProfile.objects.create(user=request.user)
+    access_denied = reject_external_user_reference(request)
+    if access_denied:
+        return access_denied
+
+    profile = get_owned_user_profile(request.user)
     
     context = {
         'profile': profile,
