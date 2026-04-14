@@ -1,17 +1,18 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Group, User
 from django.contrib import messages
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_protect
 from django.db import transaction
-from django.utils.decorators import method_decorator
-from django.views import View
 from django.http import HttpResponseForbidden
-from django.contrib.auth.models import User
 
 from .forms import RegistrationForm, LoginForm, CustomPasswordChangeForm, UserProfileForm
 from .models import UserProfile, LoginAttempt
+
+STANDARD_GROUP_NAME = 'Standard Users'
+PRIVILEGED_GROUP_NAME = 'Privileged Users'
 
 
 def get_client_ip(request):
@@ -22,6 +23,17 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
+
+
+def assign_default_group(user):
+    """Assign a registered user to the default standard role group."""
+    group, _ = Group.objects.get_or_create(name=STANDARD_GROUP_NAME)
+    user.groups.add(group)
+
+
+def is_privileged_user(user):
+    """Check whether the user belongs to a privileged role."""
+    return user.is_authenticated and (user.is_superuser or user.groups.filter(name=PRIVILEGED_GROUP_NAME).exists())
 
 
 @require_http_methods(["GET", "POST"])
@@ -37,6 +49,7 @@ def register(request):
             try:
                 with transaction.atomic():
                     user = form.save()
+                    assign_default_group(user)
                     messages.success(
                         request, 
                         "Registration successful! You can now log in."
@@ -183,4 +196,15 @@ def account_settings(request):
         'user': request.user,
     }
     return render(request, 'ngabo/account_settings.html', context)
+
+
+@login_required(login_url='ngabo:login')
+def privileged_area(request):
+    """Privileged view only for staff or members of the privileged role group."""
+    if not is_privileged_user(request.user):
+        return HttpResponseForbidden("You do not have permission to access this page.")
+
+    return render(request, 'ngabo/privileged_area.html', {
+        'user': request.user,
+    })
 

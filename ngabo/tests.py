@@ -1,5 +1,5 @@
 from django.test import TestCase, Client
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.template import Template
 from django.test.utils import _TestState
 from django.urls import reverse
@@ -109,6 +109,18 @@ class UserAuthenticationTestCase(BaseAuthTestCase):
         self.assertEqual(response.status_code, 200)  # Stay on registration page
         self.assertFalse(User.objects.filter(username='ab').exists())
 
+    def test_user_is_assigned_standard_group_after_registration(self):
+        """Test that new users are assigned the standard role group."""
+        data = {
+            'username': 'groupuser',
+            'email': 'groupuser@example.com',
+            'password1': 'TestPassword123',
+            'password2': 'TestPassword123'
+        }
+        self.client.post(self.register_url, data)
+        user = User.objects.get(username='groupuser')
+        self.assertTrue(user.groups.filter(name='Standard Users').exists())
+
 
 class UserLoginTestCase(BaseAuthTestCase):
     """Test cases for user login functionality."""
@@ -191,6 +203,44 @@ class UserLoginTestCase(BaseAuthTestCase):
         
         login_attempt = LoginAttempt.objects.filter(username='testuser', success=False).first()
         self.assertIsNotNone(login_attempt)
+
+
+class RoleBasedAccessTestCase(BaseAuthTestCase):
+    """Test cases for role-based authorization rules."""
+
+    def setUp(self):
+        self.client = Client()
+        self.privileged_url = reverse('ngabo:privileged_area')
+        self.login_url = reverse('ngabo:login')
+
+        self.standard_user = User.objects.create_user(
+            username='standard',
+            email='standard@example.com',
+            password='TestPassword123'
+        )
+        self.privileged_group, _ = Group.objects.get_or_create(name='Privileged Users')
+        self.privileged_user = User.objects.create_user(
+            username='privileged',
+            email='privileged@example.com',
+            password='TestPassword123'
+        )
+        self.privileged_user.groups.add(self.privileged_group)
+
+    def test_anonymous_user_redirected_from_privileged_area(self):
+        response = self.client.get(self.privileged_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(self.login_url, response.url)
+
+    def test_standard_user_denied_privileged_area(self):
+        self.client.login(username='standard', password='TestPassword123')
+        response = self.client.get(self.privileged_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_privileged_user_can_access_privileged_area(self):
+        self.client.login(username='privileged', password='TestPassword123')
+        response = self.client.get(self.privileged_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Privileged Area')
 
 
 class ProtectedViewsTestCase(BaseAuthTestCase):

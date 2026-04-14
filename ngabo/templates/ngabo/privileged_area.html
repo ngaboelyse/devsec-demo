@@ -1,0 +1,25 @@
+{% extends "ngabo/base.html" %}
+
+{% block title %}Privileged Area - User Authentication Service{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">Privileged Area</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">This section is only available to privileged users.</p>
+                <p class="mb-4">If you can see this page, your account has been granted elevated access.</p>
+                <ul>
+                    <li>Privileged users can access extra controls and monitoring pages.</li>
+                    <li>Standard users are not granted this page.</li>
+                    <li>Unauthorized access attempts are blocked with safe handling.</li>
+                </ul>
+                <a href="{% url 'ngabo:dashboard' %}" class="btn btn-secondary mt-3">Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

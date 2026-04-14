@@ -11,4 +11,5 @@ urlpatterns = [
     path('profile/', views.profile, name='profile'),
     path('change-password/', views.change_password, name='change_password'),
     path('account-settings/', views.account_settings, name='account_settings'),
+    path('privileged-area/', views.privileged_area, name='privileged_area'),
 ]

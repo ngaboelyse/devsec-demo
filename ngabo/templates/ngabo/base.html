@@ -64,6 +64,11 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'ngabo:account_settings' %}">Settings</a>
                         </li>
+                        {% if is_privileged_user %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'ngabo:privileged_area' %}">Privileged</a>
+                        </li>
+                        {% endif %}
                         <li class="nav-item">
                             <span class="nav-link">Welcome, {{ user.username }}</span>
                         </li>
