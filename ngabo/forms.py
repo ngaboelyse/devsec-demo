@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, PasswordChangeForm
 from django.core.exceptions import ValidationError
+from django.utils.html import strip_tags
 from .models import UserProfile
 
 
@@ -54,10 +55,20 @@ class RegistrationForm(UserCreationForm):
             raise ValidationError("Username must be at least 3 characters long.")
         return username
     
+    def clean_first_name(self):
+        return strip_tags(self.cleaned_data.get('first_name', ''))
+
+    def clean_last_name(self):
+        return strip_tags(self.cleaned_data.get('last_name', ''))
+
     def save(self, commit=True):
         """Save user and create associated profile."""
         user = super().save(commit=False)
         user.email = self.cleaned_data['email']
+        # Ensure first and last name are sanitized and persisted
+        user.first_name = self.cleaned_data.get('first_name', '')
+        user.last_name = self.cleaned_data.get('last_name', '')
+
         if commit:
             user.save()
             UserProfile.objects.get_or_create(user=user)
@@ -138,6 +149,18 @@ class UserProfileForm(forms.ModelForm):
             self.fields['last_name'].initial = self.instance.user.last_name
             self.fields['email'].initial = self.instance.user.email
     
+    def clean_bio(self):
+        return strip_tags(self.cleaned_data.get('bio', ''))
+
+    def clean_first_name(self):
+        return strip_tags(self.cleaned_data.get('first_name', ''))
+
+    def clean_last_name(self):
+        return strip_tags(self.cleaned_data.get('last_name', ''))
+
+    def clean_phone_number(self):
+        return strip_tags(self.cleaned_data.get('phone_number', ''))
+
     def save(self, commit=True):
         """Save profile and update associated user data."""
         profile = super().save(commit=False)

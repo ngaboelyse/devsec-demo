@@ -826,3 +826,35 @@ class AuditLoggingTestCase(BaseAuthTestCase):
         with self.assertLogs('ngabo.audit', level='INFO') as cm:
             self.client.post(self.change_password_url, data)
             self.assertTrue(any("Audit: Action=PasswordChange, User=audituser" in output for output in cm.output))
+
+
+class StoredXssTestCase(BaseAuthTestCase):
+    """Test cases to ensure user-controlled content is protected against Stored XSS."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = Client()
+        self.profile_url = reverse('ngabo:profile')
+        self.dashboard_url = reverse('ngabo:dashboard')
+        self.user = User.objects.create_user(username='xssuser', password='TestPassword123')
+        UserProfile.objects.create(user=self.user)
+        self.client.login(username='xssuser', password='TestPassword123')
+
+    def test_profile_bio_sanitization(self):
+        """Verify that malicious scripts in the bio are stripped or rendered safely."""
+        xss_payload = "<script>alert('xss')</script>Hello World"
+        self.client.post(self.profile_url, {
+            'bio': xss_payload,
+            'first_name': 'Test',
+            'last_name': 'User',
+            'email': 'xss@example.com'
+        })
+        
+        # Verify the script tag is not present in the rendered profile
+        response = self.client.get(self.profile_url)
+        self.assertNotContains(response, "<script>")
+        self.assertContains(response, "Hello World")
+
+        # Verify the dashboard is also safe
+        response = self.client.get(self.dashboard_url)
+        self.assertNotContains(response, "<script>")
