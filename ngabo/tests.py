@@ -1,3 +1,4 @@
+import logging
 from django.test import TestCase, Client
 from django.contrib.auth.models import Group, User
 from django.contrib.auth.tokens import default_token_generator
@@ -767,3 +768,61 @@ class OpenRedirectTestCase(BaseAuthTestCase):
         safe_url = '/auth/login/'
         response = self.client.post(self.logout_url + '?next=' + safe_url)
         self.assertRedirects(response, safe_url, fetch_redirect_response=False)
+
+
+class AuditLoggingTestCase(BaseAuthTestCase):
+    """Test cases to ensure security-relevant events are logged correctly."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = Client()
+        self.login_url = reverse('ngabo:login')
+        self.register_url = reverse('ngabo:register')
+        self.logout_url = reverse('ngabo:logout')
+        self.change_password_url = reverse('ngabo:change_password')
+        self.privileged_url = reverse('ngabo:privileged_area')
+        self.user = User.objects.create_user(username='audituser', password='TestPassword123')
+
+    def test_registration_audit_log(self):
+        """Verify user registration generates an audit log entry."""
+        data = {
+            'username': 'newuser',
+            'email': 'new@example.com',
+            'password1': 'NewPass123!',
+            'password2': 'NewPass123!'
+        }
+        with self.assertLogs('ngabo.audit', level='INFO') as cm:
+            self.client.post(self.register_url, data)
+            self.assertTrue(any("Audit: Action=Registration, User=newuser" in output for output in cm.output))
+
+    def test_login_success_audit_log(self):
+        """Verify successful login generates an audit log entry."""
+        with self.assertLogs('ngabo.audit', level='INFO') as cm:
+            self.client.post(self.login_url, {'username': 'audituser', 'password': 'TestPassword123'})
+            self.assertTrue(any("Audit: Action=Login, Status=Success, User=audituser" in output for output in cm.output))
+
+    def test_login_failure_audit_log(self):
+        """Verify failed login generates a warning audit log entry."""
+        with self.assertLogs('ngabo.audit', level='WARNING') as cm:
+            self.client.post(self.login_url, {'username': 'audituser', 'password': 'WrongPassword'})
+            self.assertTrue(any("Audit: Action=Login, Status=Failure, User=audituser" in output for output in cm.output))
+
+    def test_privileged_access_audit_logs(self):
+        """Verify privileged access attempts are logged."""
+        # Case: Denied
+        self.client.login(username='audituser', password='TestPassword123')
+        with self.assertLogs('ngabo.audit', level='WARNING') as cm:
+            self.client.get(self.privileged_url)
+            self.assertTrue(any("Audit: Action=PrivilegedAccess, Status=Denied" in output for output in cm.output))
+
+    def test_password_change_audit_log(self):
+        """Verify password change generates an audit log entry."""
+        self.client.login(username='audituser', password='TestPassword123')
+        data = {
+            'old_password': 'TestPassword123',
+            'new_password1': 'NewSecurePass99!',
+            'new_password2': 'NewSecurePass99!'
+        }
+        with self.assertLogs('ngabo.audit', level='INFO') as cm:
+            self.client.post(self.change_password_url, data)
+            self.assertTrue(any("Audit: Action=PasswordChange, User=audituser" in output for output in cm.output))

@@ -1,3 +1,4 @@
+import logging
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -14,6 +15,9 @@ from datetime import timedelta
 from .forms import RegistrationForm, LoginForm, CustomPasswordChangeForm, UserProfileForm
 from .models import UserProfile, LoginAttempt
 
+# Set up audit logger for security-relevant events
+audit_logger = logging.getLogger('ngabo.audit')
+
 STANDARD_GROUP_NAME = 'Standard Users'
 PRIVILEGED_GROUP_NAME = 'Privileged Users'
 
@@ -28,10 +32,12 @@ def get_client_ip(request):
     return ip
 
 
-def assign_default_group(user):
+def assign_default_group(user, ip_address=None):
     """Assign a registered user to the default standard role group."""
     group, _ = Group.objects.get_or_create(name=STANDARD_GROUP_NAME)
     user.groups.add(group)
+    audit_logger.info(f"Audit: Action=GroupAssignment, User={user.username}, Group={STANDARD_GROUP_NAME}, IP={ip_address}")
+
 
 
 def is_privileged_user(user):
@@ -74,11 +80,13 @@ def register(request):
             try:
                 with transaction.atomic():
                     user = form.save()
-                    assign_default_group(user)
+                    ip_address = get_client_ip(request)
+                    assign_default_group(user, ip_address=ip_address)
                     messages.success(
                         request, 
                         "Registration successful! You can now log in."
                     )
+                    audit_logger.info(f"Audit: Action=Registration, User={user.username}, IP={ip_address}")
                     return redirect('ngabo:login')
             except Exception as e:
                 messages.error(request, f"Registration failed: {str(e)}")
@@ -102,6 +110,9 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect('ngabo:dashboard')
     
+    # Capture the redirection target from GET or POST
+    next_url = request.POST.get('next') or request.GET.get('next')
+
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -121,6 +132,7 @@ def login_view(request):
             ).count()
 
             if recent_failed_attempts >= MAX_FAILED_ATTEMPTS:
+                audit_logger.warning(f"Audit: Action=Login, Status=Lockout, User={username}, IP={ip_address}")
                 messages.error(request, "Too many failed login attempts. Please try again later.")
                 return render(request, 'ngabo/login.html', {'form': form})
             
@@ -134,6 +146,11 @@ def login_view(request):
                 success=user is not None
             )
             
+            if user is not None:
+                audit_logger.info(f"Audit: Action=Login, Status=Success, User={user.username}, IP={ip_address}")
+            else:
+                audit_logger.warning(f"Audit: Action=Login, Status=Failure, User={username}, IP={ip_address}")
+
             if user is not None:
                 login(request, user)
                 
@@ -164,8 +181,11 @@ def login_view(request):
 @csrf_protect
 def logout_view(request):
     """Handle user logout."""
+    username = request.user.username if request.user.is_authenticated else "Anonymous"
+    ip_address = get_client_ip(request)
     next_url = request.POST.get('next') or request.GET.get('next')
     logout(request)
+    audit_logger.info(f"Audit: Action=Logout, User={username}, IP={ip_address}")
     messages.success(request, "You have been logged out successfully.")
 
     if next_url and url_has_allowed_host_and_scheme(
@@ -199,10 +219,12 @@ def dashboard(request):
 @csrf_protect
 def change_password(request):
     """Allow users to change their password."""
+    ip_address = get_client_ip(request)
     if request.method == 'POST':
         form = CustomPasswordChangeForm(request.user, request.POST)
         if form.is_valid():
             user = form.save()
+            audit_logger.info(f"Audit: Action=PasswordChange, User={user.username}, IP={ip_address}")
             messages.success(request, "Your password has been changed successfully.")
             return redirect('ngabo:dashboard')
         else:
@@ -267,9 +289,12 @@ def account_settings(request):
 @login_required(login_url='ngabo:login')
 def privileged_area(request):
     """Privileged view only for staff or members of the privileged role group."""
+    ip_address = get_client_ip(request)
     if not is_privileged_user(request.user):
+        audit_logger.warning(f"Audit: Action=PrivilegedAccess, Status=Denied, User={request.user.username}, IP={ip_address}")
         return HttpResponseForbidden("You do not have permission to access this page.")
 
+    audit_logger.info(f"Audit: Action=PrivilegedAccess, Status=Granted, User={request.user.username}, IP={ip_address}")
     return render(request, 'ngabo/privileged_area.html', {
         'user': request.user,
     })
