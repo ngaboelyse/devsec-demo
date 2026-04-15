@@ -208,6 +208,30 @@ class UserLoginTestCase(BaseAuthTestCase):
         login_attempt = LoginAttempt.objects.filter(username='testuser', success=False).first()
         self.assertIsNotNone(login_attempt)
 
+    def test_brute_force_lockout(self):
+        """Test that 5 failed attempts trigger the lockout feature."""
+        # 1. Attempt 5 wrong logins
+        data = {
+            'username': 'testuser',
+            'password': 'WrongPassword',
+            'remember_me': False
+        }
+
+        for _ in range(5):
+            self.client.post(self.login_url, data)
+        
+        # 2. Attempt 6th login (should trigger rate limit / lockout message)
+        data_correct = {
+            'username': 'testuser',
+            'password': 'TestPassword123',  # correct password, but should still fail due to lockout
+            'remember_me': False
+        }
+        response = self.client.post(self.login_url, data_correct)
+        
+        self.assertEqual(response.status_code, 200) # does not log the user in
+        self.assertContains(response, 'Too many failed login attempts')
+        self.assertNotIn('_auth_user_id', self.client.session) # not logged in
+
 
 class RoleBasedAccessTestCase(BaseAuthTestCase):
     """Test cases for role-based authorization rules."""
@@ -679,3 +703,28 @@ class PasswordResetFlowTestCase(BaseAuthTestCase):
         self.assertContains(response, 'Sign In')
 
 
+class CsrfProtectionTestCase(BaseAuthTestCase):
+    """Test cases to ensure CSRF protection is active on state-changing views."""
+
+    def setUp(self):
+        """Set up test client with CSRF enforcement enabled."""
+        self.client = Client(enforce_csrf_checks=True)
+        self.user = User.objects.create_user(
+            username='csrfuser',
+            email='csrf@example.com',
+            password='TestPassword123'
+        )
+        self.logout_url = reverse('ngabo:logout')
+        self.profile_url = reverse('ngabo:profile')
+
+    def test_logout_requires_csrf_token(self):
+        """Verify that logout POST request fails without a CSRF token."""
+        self.client.login(username='csrfuser', password='TestPassword123')
+        response = self.client.post(self.logout_url)
+        self.assertEqual(response.status_code, 403)  # Forbidden due to missing CSRF
+
+    def test_profile_update_requires_csrf_token(self):
+        """Verify that profile update POST request fails without a CSRF token."""
+        self.client.login(username='csrfuser', password='TestPassword123')
+        response = self.client.post(self.profile_url, {'bio': 'Attempting CSRF update'})
+        self.assertEqual(response.status_code, 403)

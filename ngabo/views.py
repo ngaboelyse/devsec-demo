@@ -7,6 +7,8 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_protect
 from django.db import transaction
 from django.http import HttpResponseForbidden
+from django.utils import timezone
+from datetime import timedelta
 
 from .forms import RegistrationForm, LoginForm, CustomPasswordChangeForm, UserProfileForm
 from .models import UserProfile, LoginAttempt
@@ -86,10 +88,13 @@ def register(request):
     return render(request, 'ngabo/register.html', {'form': form})
 
 
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
 @require_http_methods(["GET", "POST"])
 @csrf_protect
 def login_view(request):
-    """Handle user login with attempt tracking."""
+    """Handle user login with attempt tracking and brute force protection."""
     if request.user.is_authenticated:
         return redirect('ngabo:dashboard')
     
@@ -100,6 +105,22 @@ def login_view(request):
             password = form.cleaned_data.get('password')
             ip_address = get_client_ip(request)
             
+            # --- Brute-force protection: check previous failed attempts ---
+            lockout_time = timezone.now() - timedelta(minutes=LOCKOUT_MINUTES)
+            
+            # Check for failed attempts tied to both the username AND ip address
+            recent_failed_attempts = LoginAttempt.objects.filter(
+                username=username,
+                ip_address=ip_address,
+                success=False,
+                timestamp__gte=lockout_time
+            ).count()
+
+            if recent_failed_attempts >= MAX_FAILED_ATTEMPTS:
+                messages.error(request, "Too many failed login attempts. Please try again later.")
+                return render(request, 'ngabo/login.html', {'form': form})
+            
+            # Allow the login check
             user = authenticate(request, username=username, password=password)
             
             # Log the login attempt
@@ -128,6 +149,7 @@ def login_view(request):
 
 @require_http_methods(["POST"])
 @login_required(login_url='ngabo:login')
+@csrf_protect
 def logout_view(request):
     """Handle user logout."""
     username = request.user.username
@@ -136,6 +158,7 @@ def logout_view(request):
     return redirect('ngabo:login')
 
 
+@require_http_methods(["GET"])
 @login_required(login_url='ngabo:login')
 def dashboard(request):
     """Protected dashboard view for authenticated users."""
@@ -204,6 +227,7 @@ def profile(request):
     return render(request, 'ngabo/profile.html', context)
 
 
+@require_http_methods(["GET"])
 @login_required(login_url='ngabo:login')
 def account_settings(request):
     """View for account settings and security options."""
@@ -220,6 +244,7 @@ def account_settings(request):
     return render(request, 'ngabo/account_settings.html', context)
 
 
+@require_http_methods(["GET"])
 @login_required(login_url='ngabo:login')
 def privileged_area(request):
     """Privileged view only for staff or members of the privileged role group."""
@@ -229,4 +254,3 @@ def privileged_area(request):
     return render(request, 'ngabo/privileged_area.html', {
         'user': request.user,
     })
-
