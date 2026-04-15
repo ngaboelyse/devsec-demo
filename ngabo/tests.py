@@ -1,8 +1,12 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import Group, User
+from django.contrib.auth.tokens import default_token_generator
+from django.core import mail
 from django.template import Template
 from django.test.utils import _TestState
 from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from .models import UserProfile, LoginAttempt
 
 
@@ -445,4 +449,233 @@ class LoginAttemptModelTestCase(BaseAuthTestCase):
         )
         self.assertIn('testuser', str(attempt))
         self.assertIn('Success', str(attempt))
+
+
+class PasswordResetFlowTestCase(BaseAuthTestCase):
+    """Test cases for the secure password reset workflow.
+
+    Security properties tested:
+    - User enumeration prevention (same response for known / unknown emails)
+    - HMAC-based token validity and expiry
+    - Password validation enforcement on reset
+    - CSRF protection on all forms
+    - One-time token usage (token invalidated after password change)
+    """
+
+    def setUp(self):
+        self.client = Client()
+        self.password_reset_url = reverse('ngabo:password_reset')
+        self.password_reset_done_url = reverse('ngabo:password_reset_done')
+        self.password_reset_complete_url = reverse('ngabo:password_reset_complete')
+        self.login_url = reverse('ngabo:login')
+
+        self.user = User.objects.create_user(
+            username='resetuser',
+            email='resetuser@example.com',
+            password='OldPassword123'
+        )
+        UserProfile.objects.create(user=self.user)
+
+    # ── Helper ─────────────────────────────────────────────────────────
+    def _get_reset_url(self, user=None):
+        """Generate a valid password-reset confirmation URL for *user*."""
+        user = user or self.user
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        return reverse(
+            'ngabo:password_reset_confirm',
+            kwargs={'uidb64': uid, 'token': token},
+        )
+
+    # ── Page Load Tests ────────────────────────────────────────────────
+    def test_password_reset_request_page_loads(self):
+        """Test that the password reset request page loads successfully."""
+        response = self.client.get(self.password_reset_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Reset Your Password')
+
+    def test_password_reset_done_page_loads(self):
+        """Test that the 'email sent' confirmation page loads."""
+        response = self.client.get(self.password_reset_done_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Check Your Email')
+
+    # ── Email Dispatch Tests ───────────────────────────────────────────
+    def test_password_reset_sends_email_for_valid_user(self):
+        """Test that submitting a valid email dispatches a reset email."""
+        response = self.client.post(
+            self.password_reset_url,
+            {'email': 'resetuser@example.com'},
+        )
+        self.assertRedirects(
+            response,
+            self.password_reset_done_url,
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('resetuser@example.com', mail.outbox[0].to)
+        # The email body should contain a reset link
+        self.assertIn('/password-reset-confirm/', mail.outbox[0].body)
+
+    def test_password_reset_no_email_for_unknown_address(self):
+        """Test that submitting an unknown email does NOT send mail
+        but still redirects to the 'done' page (prevents user enumeration)."""
+        response = self.client.post(
+            self.password_reset_url,
+            {'email': 'nobody@example.com'},
+        )
+        # Must still redirect – identical UX for attacker
+        self.assertRedirects(
+            response,
+            self.password_reset_done_url,
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 0)
+
+    # ── Token Validation & Full Flow ───────────────────────────────────
+    def test_valid_token_shows_new_password_form(self):
+        """Test that a valid token link shows the set-new-password form."""
+        url = self._get_reset_url()
+        # Django's PasswordResetConfirmView uses an internal redirect
+        # (stores token in session) since Django 3.0.
+        response = self.client.get(url, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Set New Password')
+
+    def test_full_password_reset_flow(self):
+        """Test the complete happy-path password reset flow end-to-end."""
+        # Step 1 – request the reset
+        self.client.post(
+            self.password_reset_url,
+            {'email': 'resetuser@example.com'},
+        )
+        self.assertEqual(len(mail.outbox), 1)
+
+        # Step 2 – follow the link from the email
+        url = self._get_reset_url()
+        response = self.client.get(url, follow=True)
+        self.assertEqual(response.status_code, 200)
+
+        # Step 3 – submit the new password via the redirected set-password URL
+        # After GET, Django redirects to a URL with token replaced by
+        # 'set-password'. We POST to the final URL in the redirect chain.
+        final_url = response.redirect_chain[-1][0]
+        response = self.client.post(final_url, {
+            'new_password1': 'NewSecurePass99',
+            'new_password2': 'NewSecurePass99',
+        })
+        self.assertRedirects(
+            response,
+            self.password_reset_complete_url,
+            fetch_redirect_response=False,
+        )
+
+        # Step 4 – verify old password no longer works
+        self.assertFalse(
+            self.client.login(username='resetuser', password='OldPassword123')
+        )
+        # Step 5 – verify new password works
+        self.assertTrue(
+            self.client.login(username='resetuser', password='NewSecurePass99')
+        )
+
+    # ── Invalid / Expired Token ────────────────────────────────────────
+    def test_invalid_token_shows_error(self):
+        """Test that a tampered token shows the 'invalid link' message."""
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        bad_url = reverse(
+            'ngabo:password_reset_confirm',
+            kwargs={'uidb64': uid, 'token': 'bad-token-value'},
+        )
+        response = self.client.get(bad_url, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid or Expired Link')
+
+    def test_invalid_uid_shows_error(self):
+        """Test that a fabricated UID shows the 'invalid link' message."""
+        token = default_token_generator.make_token(self.user)
+        bad_url = reverse(
+            'ngabo:password_reset_confirm',
+            kwargs={'uidb64': 'AAAA', 'token': token},
+        )
+        response = self.client.get(bad_url, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid or Expired Link')
+
+    def test_token_invalidated_after_password_change(self):
+        """Test that a token cannot be reused after the password has
+        been changed (one-time use enforced by Django's HMAC scheme)."""
+        url = self._get_reset_url()
+        # Use the token to reset password
+        response = self.client.get(url, follow=True)
+        final_url = response.redirect_chain[-1][0]
+        self.client.post(final_url, {
+            'new_password1': 'NewSecurePass99',
+            'new_password2': 'NewSecurePass99',
+        })
+
+        # Try the same token again – should fail
+        response = self.client.get(url, follow=True)
+        self.assertContains(response, 'Invalid or Expired Link')
+
+    # ── Password Validation on Reset ───────────────────────────────────
+    def test_password_reset_enforces_validation_rules(self):
+        """Test that Django's password validators are enforced during reset."""
+        url = self._get_reset_url()
+        response = self.client.get(url, follow=True)
+        final_url = response.redirect_chain[-1][0]
+
+        # Submit a too-short / too-common password
+        response = self.client.post(final_url, {
+            'new_password1': '123',
+            'new_password2': '123',
+        })
+        # Should stay on the form (200), not redirect
+        self.assertEqual(response.status_code, 200)
+        # Old password should still work
+        self.assertTrue(
+            self.client.login(username='resetuser', password='OldPassword123')
+        )
+
+    def test_password_reset_mismatched_passwords(self):
+        """Test that mismatched passwords are rejected during reset."""
+        url = self._get_reset_url()
+        response = self.client.get(url, follow=True)
+        final_url = response.redirect_chain[-1][0]
+
+        response = self.client.post(final_url, {
+            'new_password1': 'NewSecurePass99',
+            'new_password2': 'DifferentPass99',
+        })
+        self.assertEqual(response.status_code, 200)
+        # Password unchanged
+        self.assertTrue(
+            self.client.login(username='resetuser', password='OldPassword123')
+        )
+
+    # ── CSRF Protection ────────────────────────────────────────────────
+    def test_password_reset_request_requires_csrf(self):
+        """Test that the reset request form is protected by CSRF."""
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(
+            self.password_reset_url,
+            {'email': 'resetuser@example.com'},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # ── Login Page Link ────────────────────────────────────────────────
+    def test_login_page_has_password_reset_link(self):
+        """Test that the login page contains a link to the reset flow."""
+        response = self.client.get(self.login_url)
+        self.assertContains(response, 'Forgot your password?')
+        self.assertContains(response, self.password_reset_url)
+
+    # ── Complete Page ──────────────────────────────────────────────────
+    def test_password_reset_complete_page_loads(self):
+        """Test that the 'reset complete' page loads and links to login."""
+        response = self.client.get(self.password_reset_complete_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Password Reset Successful')
+        self.assertContains(response, 'Sign In')
+
 

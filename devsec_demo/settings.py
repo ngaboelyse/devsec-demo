@@ -127,3 +127,13 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 LOGIN_URL = 'ngabo:login'
 LOGIN_REDIRECT_URL = 'ngabo:dashboard'
+
+# ── Email backend ──────────────────────────────────────────────────────
+# Console backend prints reset emails to stdout (safe for development).
+# In production, switch to 'django.core.mail.backends.smtp.SmtpEmailBackend'
+# and configure EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, etc.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'noreply@uas-demo.example.com'
+
+# Password-reset tokens expire after 1 hour (default is 3 days / 259200 s).
+PASSWORD_RESET_TIMEOUT = 3600
