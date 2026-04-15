@@ -58,9 +58,7 @@ def reject_external_user_reference(request):
 
 def get_owned_user_profile(user):
     """Resolve the authenticated user's profile without using external identifiers."""
-    profile = UserProfile.objects.filter(user=user).first()
-    if profile is None:
-        profile = UserProfile.objects.create(user=user)
+    profile, _ = UserProfile.objects.get_or_create(user=user)
     return profile
 
 
@@ -97,7 +95,7 @@ def register(request):
     else:
         form = RegistrationForm()
     
-    return render(request, 'ngabo/register.html', {'form': form})
+    return render(request, 'ngabo/register.html', {'form': form, 'next': next_url})
 
 
 MAX_FAILED_ATTEMPTS = 5
@@ -252,6 +250,9 @@ def profile(request):
         form = UserProfileForm(request.POST, request.FILES, instance=user_profile)
         if form.is_valid():
             form.save()
+            if 'profile_picture' in request.FILES or 'document' in request.FILES:
+                ip_address = get_client_ip(request)
+                audit_logger.info(f"Audit: Action=FileUpload, User={request.user.username}, IP={ip_address}")
             messages.success(request, "Your profile has been updated successfully.")
             return redirect('ngabo:profile')
         else:

@@ -2,8 +2,15 @@ from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, PasswordChangeForm
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.utils.html import strip_tags
+from django.template.defaultfilters import filesizeformat
 from .models import UserProfile
+
+MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2MB
+MAX_DOCUMENT_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif']
+ALLOWED_DOCUMENT_EXTENSIONS = ['pdf', 'docx', 'doc']
 
 
 class RegistrationForm(UserCreationForm):
@@ -129,13 +136,20 @@ class UserProfileForm(forms.ModelForm):
     )
     profile_picture = forms.ImageField(
         required=False,
+        validators=[FileExtensionValidator(allowed_extensions=ALLOWED_IMAGE_EXTENSIONS)],
         widget=forms.ClearableFileInput(attrs={'class': 'form-control'}),
-        help_text="Optional profile image upload."
+        help_text=f"Max size {filesizeformat(MAX_IMAGE_SIZE)}. Allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS).upper()}"
+    )
+    document = forms.FileField(
+        required=False,
+        validators=[FileExtensionValidator(allowed_extensions=ALLOWED_DOCUMENT_EXTENSIONS)],
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control'}),
+        help_text=f"Max size {filesizeformat(MAX_DOCUMENT_SIZE)}. Allowed: PDF, DOCX, DOC."
     )
     
     class Meta:
         model = UserProfile
-        fields = ['bio', 'phone_number', 'date_of_birth', 'profile_picture']
+        fields = ['bio', 'phone_number', 'date_of_birth', 'profile_picture', 'document']
         widgets = {
             'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control', 'type': 'tel'}),
@@ -151,6 +165,18 @@ class UserProfileForm(forms.ModelForm):
     
     def clean_bio(self):
         return strip_tags(self.cleaned_data.get('bio', ''))
+
+    def clean_profile_picture(self):
+        file = self.cleaned_data.get('profile_picture')
+        if file and file.size > MAX_IMAGE_SIZE:
+            raise ValidationError(f"File too large. Maximum size is {filesizeformat(MAX_IMAGE_SIZE)}.")
+        return file
+
+    def clean_document(self):
+        file = self.cleaned_data.get('document')
+        if file and file.size > MAX_DOCUMENT_SIZE:
+            raise ValidationError(f"File too large. Maximum size is {filesizeformat(MAX_DOCUMENT_SIZE)}.")
+        return file
 
     def clean_first_name(self):
         return strip_tags(self.cleaned_data.get('first_name', ''))

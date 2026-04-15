@@ -1,5 +1,6 @@
 import logging
 from django.test import TestCase, Client
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import Group, User
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
@@ -858,3 +859,35 @@ class StoredXssTestCase(BaseAuthTestCase):
         # Verify the dashboard is also safe
         response = self.client.get(self.dashboard_url)
         self.assertNotContains(response, "<script>")
+
+
+class SecureFileUploadTestCase(BaseAuthTestCase):
+    """Test cases for secure file upload validation."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = Client()
+        self.profile_url = reverse('ngabo:profile')
+        self.user = User.objects.create_user(username='fileuser', password='TestPassword123')
+        UserProfile.objects.create(user=self.user)
+        self.client.login(username='fileuser', password='TestPassword123')
+
+    def test_upload_invalid_extension(self):
+        """Verify that dangerous file extensions are rejected."""
+        malicious_file = SimpleUploadedFile("malicious.exe", b"binary content", content_type="application/octet-stream")
+        response = self.client.post(self.profile_url, {
+            'document': malicious_file,
+            'email': 'fileuser@example.com'
+        })
+        self.assertEqual(response.status_code, 200) # Form re-rendered with error
+        self.assertContains(response, "File extension “exe” is not allowed")
+
+    def test_upload_too_large(self):
+        """Verify that files exceeding the size limit are rejected."""
+        large_file = SimpleUploadedFile("huge.pdf", b"0" * (6 * 1024 * 1024), content_type="application/pdf")
+        response = self.client.post(self.profile_url, {
+            'document': large_file,
+            'email': 'fileuser@example.com'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "File too large")

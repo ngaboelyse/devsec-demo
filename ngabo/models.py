@@ -1,7 +1,21 @@
+import os
+import uuid
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+
+def get_secure_upload_path(instance, filename, folder):
+    """Generate a random UUID-based filename to prevent collisions and traversal."""
+    ext = filename.split('.')[-1]
+    new_filename = f"{uuid.uuid4()}.{ext}"
+    return os.path.join(folder, new_filename)
+
+def profile_pic_path(instance, filename):
+    return get_secure_upload_path(instance, filename, 'profile_pictures')
+
+def document_upload_path(instance, filename):
+    return get_secure_upload_path(instance, filename, 'user_documents')
 
 
 class UserProfile(models.Model):
@@ -10,10 +24,10 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(blank=True, help_text="User biography")
     profile_picture = models.ImageField(
-        upload_to='profile_pictures/', 
+        upload_to=profile_pic_path, 
         blank=True, 
         null=True,
-        help_text="User profile picture"
+        help_text="User profile picture (Max 2MB)"
     )
     phone_number = models.CharField(
         max_length=20, 
@@ -24,6 +38,12 @@ class UserProfile(models.Model):
         blank=True, 
         null=True,
         help_text="User's date of birth"
+    )
+    document = models.FileField(
+        upload_to=document_upload_path,
+        blank=True,
+        null=True,
+        help_text="Relevant documents (PDF/DOCX, Max 5MB)"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -50,8 +70,8 @@ class LoginAttempt(models.Model):
         verbose_name_plural = "Login Attempts"
         ordering = ['-timestamp']
         indexes = [
-            models.Index(fields=['username', '-timestamp']),
-            models.Index(fields=['ip_address', '-timestamp']),
+            models.Index(fields=['username', 'timestamp']),
+            models.Index(fields=['ip_address', 'timestamp']),
         ]
     
     def __str__(self):
