@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.db import transaction
 from django.http import HttpResponseForbidden
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from datetime import timedelta
 
 from .forms import RegistrationForm, LoginForm, CustomPasswordChangeForm, UserProfileForm
@@ -63,7 +64,10 @@ def register(request):
     """Handle user registration."""
     if request.user.is_authenticated:
         return redirect('ngabo:dashboard')
-    
+
+    # Capture the redirection target from GET or POST
+    next_url = request.POST.get('next') or request.GET.get('next')
+
     if request.method == 'POST':
         form = RegistrationForm(request.POST)
         if form.is_valid():
@@ -138,13 +142,21 @@ def login_view(request):
                     request.session.set_expiry(0)  # End session on browser close
                 
                 messages.success(request, f"Welcome back, {user.username}!")
+
+                # Validate redirect target to prevent open redirects
+                if next_url and url_has_allowed_host_and_scheme(
+                    url=next_url,
+                    allowed_hosts={request.get_host()},
+                    require_https=request.is_secure(),
+                ):
+                    return redirect(next_url)
                 return redirect('ngabo:dashboard')
             else:
                 messages.error(request, "Invalid username or password.")
     else:
         form = LoginForm()
-    
-    return render(request, 'ngabo/login.html', {'form': form})
+
+    return render(request, 'ngabo/login.html', {'form': form, 'next': next_url})
 
 
 @require_http_methods(["POST"])
@@ -152,9 +164,16 @@ def login_view(request):
 @csrf_protect
 def logout_view(request):
     """Handle user logout."""
-    username = request.user.username
+    next_url = request.POST.get('next') or request.GET.get('next')
     logout(request)
     messages.success(request, "You have been logged out successfully.")
+
+    if next_url and url_has_allowed_host_and_scheme(
+        url=next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
     return redirect('ngabo:login')
 
 

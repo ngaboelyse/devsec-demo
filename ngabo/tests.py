@@ -728,3 +728,42 @@ class CsrfProtectionTestCase(BaseAuthTestCase):
         self.client.login(username='csrfuser', password='TestPassword123')
         response = self.client.post(self.profile_url, {'bio': 'Attempting CSRF update'})
         self.assertEqual(response.status_code, 403)
+
+
+class OpenRedirectTestCase(BaseAuthTestCase):
+    """Test cases for preventing open redirect vulnerabilities in auth flows."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = Client()
+        self.login_url = reverse('ngabo:login')
+        self.logout_url = reverse('ngabo:logout')
+        self.dashboard_url = reverse('ngabo:dashboard')
+        self.user = User.objects.create_user(username='redirectuser', password='TestPassword123')
+
+    def test_login_safe_redirect(self):
+        """Verify login redirects to safe internal URLs."""
+        safe_url = '/auth/profile/'
+        response = self.client.post(self.login_url, {
+            'username': 'redirectuser',
+            'password': 'TestPassword123',
+            'next': safe_url
+        })
+        self.assertRedirects(response, safe_url, fetch_redirect_response=False)
+
+    def test_login_unsafe_redirect_fallback(self):
+        """Verify login ignores malicious external URLs."""
+        unsafe_url = 'https://malicious-site.com'
+        response = self.client.post(self.login_url, {
+            'username': 'redirectuser',
+            'password': 'TestPassword123',
+            'next': unsafe_url
+        })
+        self.assertRedirects(response, self.dashboard_url)
+
+    def test_logout_safe_redirect(self):
+        """Verify logout redirects to safe internal URLs."""
+        self.client.login(username='redirectuser', password='TestPassword123')
+        safe_url = '/auth/login/'
+        response = self.client.post(self.logout_url + '?next=' + safe_url)
+        self.assertRedirects(response, safe_url, fetch_redirect_response=False)
